@@ -1,0 +1,13 @@
+export const getStudentsOfTeacher = async (req, res) => {
+  const teacherId = req.params.id;
+  try {
+    const [rows] = await db.promise().query(
+      "SELECT userid AS id, name, email, createdAt FROM users WHERE role = 'student' AND teacher_id = ?",
+      [teacherId]
+    );
+    return res.json({ students: rows });
+  } catch (err) {
+    console.error("getStudentsOfTeacher error:", err);
+    return res.status(500).json({ msg: "Server error" });
+  }
+};

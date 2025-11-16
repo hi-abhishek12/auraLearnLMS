@@ -1,14 +1,30 @@
 import { hashPassword, comparePassword } from "../utils/hash.js";
 import jwt from "jsonwebtoken";
 
-// controllers/authController.js
-import db from "../config/db.js";          // your mysql2 createPool export
+import db from "../config/db.js";        
+
+
+export const getTeachers = async (req, res) => {
+  try {
+    const [rows] = await db.promise().query(
+      "SELECT userid AS id, name, email FROM users WHERE role = 'teacher' AND isActive = 1"
+    );
+    return res.json({ teachers: rows });
+  } catch (err) {
+    console.error("getTeachers error:", err);
+    return res.status(500).json({ msg: "Server error" });
+  }
+};
  
 export const signup = async (req, res) => {
-  const { name, email, password, role } = req.body;
+  const { name, email, password, confirmPassword, role, teacher_id } = req.body;
 
-  if (!name || !email || !password || !role) {
+  if (!name || !email || !password || !confirmPassword || !role) {
     return res.status(400).json({ msg: "All fields required" });
+  }
+
+  if (password !== confirmPassword) {
+    return res.status(400).json({ msg: "Passwords do not match" });
   }
 
   try {
@@ -21,27 +37,40 @@ export const signup = async (req, res) => {
       return res.status(400).json({ msg: "Email already exists" });
     }
 
-    // 2) hash password
+    // 2) If student and teacher_id provided — verify teacher exists and is teacher role
+    let teacherIdToSave = null;
+    if (role === "student") {
+      if (!teacher_id) {
+        return res.status(400).json({ msg: "Student must select a teacher" });
+      }
+      const [teacherRows] = await db.promise().query(
+        "SELECT userid FROM users WHERE userid = ? AND role = 'teacher'",
+        [teacher_id]
+      );
+      if (teacherRows.length === 0) {
+        return res.status(400).json({ msg: "Selected teacher not found" });
+      }
+      teacherIdToSave = teacher_id;
+    }
+
+    // 3) hash password
     const hashed = await hashPassword(password);
 
-    // 3) insert into MySQL (username column matches your table)
+    // 4) insert
     const [result] = await db.promise().execute(
-      "INSERT INTO users (username, email, password, role, isActive) VALUES (?, ?, ?, ?, ?)",
-      [name, email, hashed, role, 1]
+      "INSERT INTO users (name, email, password, role, teacher_id, isActive) VALUES (?, ?, ?, ?, ?, ?)",
+      [name, email, hashed, role, teacherIdToSave, 1]
     );
 
-    // 4) return created user (without password)
-    const userId = result.insertId;
     return res.status(201).json({
       msg: "Signup successful",
-      user: { id: userId, name, email, role },
+      user: { id: result.insertId, name, email, role, teacher_id: teacherIdToSave }
     });
-  } catch (error) {
-    console.error("Signup error:", error);
+  } catch (err) {
+    console.error("signup error:", err);
     return res.status(500).json({ msg: "Server error" });
   }
 };
-
 
 
 
